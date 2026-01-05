@@ -25,7 +25,7 @@ class TouchpadFilter:
         self.device.grab()
 
         # Multi-touch tracking
-        self.slots = defaultdict(lambda: {'tracking_id': -1, 'x': 0, 'y': 0, 'prev_x': 0, 'prev_y': 0})
+        self.slots = defaultdict(lambda: {'tracking_id': -1, 'x': 0, 'y': 0, 'prev_x': 0, 'prev_y': 0, 'needs_init': False})
         self.current_slot = 0
         self.active_fingers = 0
 
@@ -141,14 +141,22 @@ class TouchpadFilter:
             self.cursor_active = False
             return False  # Not a 1-finger gesture
 
-        slot = active[0]
+        slot_num = active[0]
+        slot = self.slots[slot_num]
+
+        # Initialize prev position on first frame after touch
+        if slot['needs_init']:
+            slot['prev_x'] = slot['x']
+            slot['prev_y'] = slot['y']
+            slot['needs_init'] = False
+            return True  # Skip this frame to avoid jump
 
         # Calculate movement
-        dx, dy = self.calculate_movement(slot)
+        dx, dy = self.calculate_movement(slot_num)
 
         # Update previous position
-        self.slots[slot]['prev_x'] = self.slots[slot]['x']
-        self.slots[slot]['prev_y'] = self.slots[slot]['y']
+        slot['prev_x'] = slot['x']
+        slot['prev_y'] = slot['y']
 
         # Send cursor movement directly (no acceleration)
         if dx != 0 or dy != 0:
@@ -168,17 +176,34 @@ class TouchpadFilter:
             self.scroll_finger_2 = None
             return False  # Not a 2-finger gesture, pass through
 
-        slot1, slot2 = active[0], active[1]
+        slot1_num, slot2_num = active[0], active[1]
+        slot1 = self.slots[slot1_num]
+        slot2 = self.slots[slot2_num]
+
+        # Initialize prev position on first frame after touch
+        needs_skip = False
+        if slot1['needs_init']:
+            slot1['prev_x'] = slot1['x']
+            slot1['prev_y'] = slot1['y']
+            slot1['needs_init'] = False
+            needs_skip = True
+        if slot2['needs_init']:
+            slot2['prev_x'] = slot2['x']
+            slot2['prev_y'] = slot2['y']
+            slot2['needs_init'] = False
+            needs_skip = True
+        if needs_skip:
+            return True  # Skip this frame to avoid jump
 
         # Calculate movement for each finger
-        dx1, dy1 = self.calculate_movement(slot1)
-        dx2, dy2 = self.calculate_movement(slot2)
+        dx1, dy1 = self.calculate_movement(slot1_num)
+        dx2, dy2 = self.calculate_movement(slot2_num)
 
         # Update previous positions
-        self.slots[slot1]['prev_x'] = self.slots[slot1]['x']
-        self.slots[slot1]['prev_y'] = self.slots[slot1]['y']
-        self.slots[slot2]['prev_x'] = self.slots[slot2]['x']
-        self.slots[slot2]['prev_y'] = self.slots[slot2]['y']
+        slot1['prev_x'] = slot1['x']
+        slot1['prev_y'] = slot1['y']
+        slot2['prev_x'] = slot2['x']
+        slot2['prev_y'] = slot2['y']
 
         # Check if both fingers move in same direction
         if not self.same_direction(dx1, dy1, dx2, dy2):
@@ -219,11 +244,8 @@ class TouchpadFilter:
                     # Finger lifted
                     self.log(f"Finger lifted from slot {self.current_slot}")
                 else:
-                    # Finger touched - initialize prev position to current position
-                    # to prevent cursor jump on first touch
-                    slot = self.slots[self.current_slot]
-                    slot['prev_x'] = slot['x']
-                    slot['prev_y'] = slot['y']
+                    # Finger touched - mark for initialization on next SYN
+                    self.slots[self.current_slot]['needs_init'] = True
                     self.log(f"Finger touched on slot {self.current_slot}")
             elif event.code == e.ABS_MT_POSITION_X:
                 self.slots[self.current_slot]['x'] = event.value
