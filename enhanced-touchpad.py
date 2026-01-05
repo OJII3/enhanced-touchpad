@@ -134,7 +134,7 @@ class TouchpadFilter:
         return accel_dx, accel_dy
 
     def handle_1finger_cursor(self):
-        """Handle 1-finger cursor movement with Mac-like acceleration"""
+        """Handle 1-finger cursor movement (no acceleration)"""
         active = self.get_active_slots()
 
         if len(active) != 1:
@@ -150,13 +150,10 @@ class TouchpadFilter:
         self.slots[slot]['prev_x'] = self.slots[slot]['x']
         self.slots[slot]['prev_y'] = self.slots[slot]['y']
 
-        # Apply acceleration curve
-        accel_dx, accel_dy = self.apply_acceleration_curve(dx, dy)
-
-        # Send cursor movement
-        if accel_dx != 0 or accel_dy != 0:
-            self.vdevice.write(e.EV_REL, e.REL_X, accel_dx)
-            self.vdevice.write(e.EV_REL, e.REL_Y, accel_dy)
+        # Send cursor movement directly (no acceleration)
+        if dx != 0 or dy != 0:
+            self.vdevice.write(e.EV_REL, e.REL_X, dx)
+            self.vdevice.write(e.EV_REL, e.REL_Y, dy)
             self.vdevice.syn()
             self.cursor_active = True
 
@@ -222,7 +219,11 @@ class TouchpadFilter:
                     # Finger lifted
                     self.log(f"Finger lifted from slot {self.current_slot}")
                 else:
-                    # Finger touched
+                    # Finger touched - initialize prev position to current position
+                    # to prevent cursor jump on first touch
+                    slot = self.slots[self.current_slot]
+                    slot['prev_x'] = slot['x']
+                    slot['prev_y'] = slot['y']
                     self.log(f"Finger touched on slot {self.current_slot}")
             elif event.code == e.ABS_MT_POSITION_X:
                 self.slots[self.current_slot]['x'] = event.value
